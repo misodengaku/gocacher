@@ -3,6 +3,7 @@ package main
 import (
 	"io/ioutil"
 	"net/http"
+	_ "net/http/pprof"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -72,6 +73,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		if status.Err() != nil {
 			log.Fatal("set fail")
 		}
+		conn.FlushAll()
 		log.Info(key, ":\tCache set")
 	}(path, thumb)
 
