@@ -16,7 +16,7 @@ import (
 
 const (
 	FsRoot     = "/storage1"
-	CacheTTL   = 86400 * time.Second
+	CacheTTL   = 30 * 86400 * time.Second
 	maxWorkers = 30
 	maxQueues  = 10000
 )
