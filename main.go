@@ -1,9 +1,12 @@
 package main
 
 import (
+	"bytes"
+	"image/jpeg"
 	"io/ioutil"
 	"net/http"
 	_ "net/http/pprof"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -11,25 +14,37 @@ import (
 
 	"github.com/go-redis/redis"
 	log "github.com/sirupsen/logrus"
-	"gopkg.in/gographics/imagick.v3/imagick"
+	"golang.org/x/image/tiff"
+	"gopkg.in/gographics/imagick.v2/imagick"
+	"gopkg.in/yaml.v2"
 )
 
-const (
-	FsRoot     = "/storage1"
-	CacheTTL   = 30 * 86400 * time.Second
-	maxWorkers = 30
-	maxQueues  = 10000
-)
+type Config struct {
+	FsRoot     string `yaml:"fs_root"`
+	CacheTTL   int    `yaml:"cache_ttl"`
+	maxWorkers int    `yaml:"max_workers"`
+	maxQueues  int    `yaml:"max_queues"`
+	ListenAddr string `yaml:"listen_addr"`
+	RedisAddr  string `yaml:"redis_addr"`
+}
 
 var conn *redis.Client
 var mw *imagick.MagickWand
 var mutex *sync.Mutex
+var config Config
+
+var RawImageExts = []string{"NEF", "CR2", "ARW"}
 
 func handler(w http.ResponseWriter, r *http.Request) {
 
-	path := filepath.Join(FsRoot, r.URL.Path)
+	path := filepath.Join(config.FsRoot, r.URL.Path)
 	log.Info(path, ":\t", r.Method)
-	exists, _ := conn.Exists(path).Result()
+	exists, err := conn.Exists(path).Result()
+	if err != nil {
+		log.Warn(err)
+	}
+
+	log.Info(path, ":", exists)
 
 	// disable cache
 	// exists = 0
@@ -38,15 +53,62 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		log.Info(path, ":\tCache hit")
 		thumb, _ := conn.Get(path).Bytes()
+		w.Header().Set("Content-Type", "image/jpeg")
 		w.Write(thumb)
 		end := time.Now()
 		ms := int64((end.Sub(start)) / time.Microsecond)
-		log.Info(start)
-		log.Info(end)
+		// log.Info(start)
+		// log.Info(end)
 		log.Info(path, ":\tContents responded (from cache) ", ms, "ms")
 		return
 	}
 
+	// start := time.Now()
+
+	filetype := strings.ToUpper(strings.Trim(filepath.Ext(path), "."))
+	for _, v := range RawImageExts {
+		if v == filetype {
+			ReturnRAWPreview(w, path)
+			return
+		}
+	}
+
+	ReturnGenericImage(w, path)
+	// fmt.Fprintf(w, "Hello, World")
+}
+
+func ReturnRAWPreview(w http.ResponseWriter, path string) {
+	file, err := os.Open(path)
+	if err != nil {
+		panic(err)
+	}
+	defer file.Close()
+
+	tiffImg, err := tiff.Decode(file)
+	if err != nil {
+		log.Warn("TIFF decode error:", err)
+	}
+
+	jpegImg := new(bytes.Buffer)
+	err = jpeg.Encode(jpegImg, tiffImg, nil)
+	if err != nil {
+		log.Warn("JPEG encode error:", err)
+	}
+
+	go func(p string, imgBuf *bytes.Buffer) {
+		status := conn.Set(path, imgBuf.Bytes(), time.Duration(config.CacheTTL)*time.Second)
+		if status.Err() != nil {
+			log.Fatal("set fail", status.Err())
+		}
+
+	}(path, jpegImg)
+
+	w.Write(jpegImg.Bytes())
+	// jpeg.Encode(w, img, nil)
+}
+
+func ReturnGenericImage(w http.ResponseWriter, path string) {
+	start := time.Now()
 	bs, err := ioutil.ReadFile(path)
 	if err != nil {
 		log.Warn(err)
@@ -57,7 +119,6 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-
 	mutex.Lock()
 	err = mw.ReadImageBlob(bs)
 	if err != nil {
@@ -67,23 +128,34 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	thumb := GetThumbnailFromBlob(300, 300)
 	mutex.Unlock()
 
-	go func(key string, data []byte) {
-		status := conn.Set(key, data, CacheTTL)
-		// conn.Do("SETEX", key, CacheTTL, data)
-		if status.Err() != nil {
-			log.Fatal("set fail")
-		}
-		conn.FlushAll()
-		log.Info(key, ":\tCache set")
-	}(path, thumb)
+	end_conv := time.Now()
+
+	status := conn.Set(path, thumb, time.Duration(config.CacheTTL)*time.Second)
+	if status.Err() != nil {
+		log.Fatal("set fail")
+	}
+
+	end_set := time.Now()
+	conv_ms := int64((end_conv.Sub(start)) / time.Microsecond)
+	set_ms := int64((end_set.Sub(end_conv)) / time.Microsecond)
+	// log.Info(path, ":\tCache set")
+	log.Info(path, ":\tCache set convert:", conv_ms, "ms, set:", set_ms)
 
 	log.Info(path, ":\tContents responded")
 	w.Write(thumb)
-	// fmt.Fprintf(w, "Hello, World")
 }
 
 func main() {
-	var err error
+
+	configBin, err := ioutil.ReadFile("/etc/gocacher/config.yml")
+	if err != nil {
+		panic("config read error: " + err.Error())
+	}
+	err = yaml.Unmarshal(configBin, &config)
+	if err != nil {
+		panic("config unmarshal error: " + err.Error())
+	}
+
 	mutex = new(sync.Mutex)
 
 	imagick.Initialize()
@@ -91,7 +163,7 @@ func main() {
 
 	mw = imagick.NewMagickWand()
 	conn = redis.NewClient(&redis.Options{
-		Addr:     "localhost:6379",
+		Addr:     config.RedisAddr,
 		Password: "", // no password set
 		DB:       0,  // use default DB
 	})
@@ -105,7 +177,7 @@ func main() {
 	http.HandleFunc("/", handler) // ハンドラを登録してウェブページを表示させる
 
 	log.Infoln("start listen")
-	http.ListenAndServe(":8081", nil)
+	http.ListenAndServe(config.ListenAddr, nil)
 }
 
 /*
