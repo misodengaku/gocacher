@@ -1,0 +1,6 @@
+listen_addr: 127.0.0.1:8080
+redis_addr: 127.0.0.1:6379
+fs_root: /home/ubuntu
+cache_ttl: 86400
+max_workers: 30
+max_queues: 10000

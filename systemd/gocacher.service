@@ -1,0 +1,10 @@
+[Unit]
+Description=gocacher
+After=redis.service
+Requires=redis.service
+[Service]
+TimeoutStartSec=0
+Restart=always
+ExecStart=-/usr/local/bin/gocacher
+[Install]
+WantedBy=multi-user.target
