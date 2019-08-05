@@ -2,12 +2,17 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
 	"image/jpeg"
 	"io/ioutil"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -32,8 +37,10 @@ var conn *redis.Client
 var mw *imagick.MagickWand
 var mutex *sync.Mutex
 var config Config
+var tempDir string
 
-var RawImageExts = []string{"NEF", "CR2", "ARW"}
+var RawImageExts = []string{"NEF"} //, "CR2", "ARW"}
+var MovieExts = []string{"MOV", "MP4", "M4V"}
 
 func handler(w http.ResponseWriter, r *http.Request) {
 
@@ -44,7 +51,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		log.Warn(err)
 	}
 
-	log.Info(path, ":", exists)
+	log.Info(path, " cache is exists?:", exists)
 
 	// disable cache
 	// exists = 0
@@ -53,7 +60,12 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		log.Info(path, ":\tCache hit")
 		thumb, _ := conn.Get(path).Bytes()
-		w.Header().Set("Content-Type", "image/jpeg")
+		log.Info(string(thumb[:4]))
+		if string(thumb[:4]) == "JFIF" {
+			w.Header().Set("Content-Type", "image/jpeg")
+		} else {
+			w.Header().Set("Content-Type", "image/gif")
+		}
 		w.Write(thumb)
 		end := time.Now()
 		ms := int64((end.Sub(start)) / time.Microsecond)
@@ -73,6 +85,12 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	for _, v := range MovieExts {
+		if v == filetype {
+			ReturnMoviePreview(w, path)
+			return
+		}
+	}
 	ReturnGenericImage(w, path)
 	// fmt.Fprintf(w, "Hello, World")
 }
@@ -100,11 +118,31 @@ func ReturnRAWPreview(w http.ResponseWriter, path string) {
 		if status.Err() != nil {
 			log.Fatal("set fail", status.Err())
 		}
-
 	}(path, jpegImg)
 
 	w.Write(jpegImg.Bytes())
 	// jpeg.Encode(w, img, nil)
+}
+
+func ReturnMoviePreview(w http.ResponseWriter, path string) {
+	gif := getMP4Thumbnail(path, 300)
+	log.Info(gif)
+	gifImg, err := ioutil.ReadFile(gif)
+	if err != nil {
+		log.Info("gif load error ", err.Error())
+		w.WriteHeader(500)
+		return
+	}
+
+	go func(p string, img []byte) {
+		status := conn.Set(path, img, time.Duration(config.CacheTTL)*time.Second)
+		if status.Err() != nil {
+			log.Fatal("set fail", status.Err())
+		}
+	}(path, gifImg)
+
+	w.Header().Set("Content-Type", "image/gif")
+	w.Write(gifImg)
 }
 
 func ReturnGenericImage(w http.ResponseWriter, path string) {
@@ -151,6 +189,12 @@ func main() {
 	if err != nil {
 		panic("config read error: " + err.Error())
 	}
+
+	tempDir, err = ioutil.TempDir("", "gocacher")
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	err = yaml.Unmarshal(configBin, &config)
 	if err != nil {
 		panic("config unmarshal error: " + err.Error())
@@ -292,4 +336,86 @@ func getStartPointXY(width, height, resizedWidth, resizedHeight uint) (x, y int)
 		startX = int((float32(resizedWidth) - float32(resizedHeight)) / 2.0)
 	}
 	return startX, startY
+}
+
+func getMP4Thumbnail(filename string, targetWidth uint) string {
+
+	hash := sha256.Sum256([]byte(filename))
+	fileid := filepath.Join(tempDir, hex.EncodeToString(hash[:])+".gif")
+	palette := filepath.Join(tempDir, hex.EncodeToString(hash[:])+".png")
+
+	skipSecond := 10
+	duration := 10
+	fps := 4
+	size := 300
+
+	// https://robservatory.com/easily-create-animated-gifs-from-video-via-ffmpeg/
+	filters := fmt.Sprintf("fps=%d,scale=%d:-1:flags=lanczos,palettegen", fps, size)
+
+	cmd1 := []string{
+		"-ss", strconv.Itoa(skipSecond),
+		"-t", strconv.Itoa(duration),
+		"-i", filename,
+		"-vf", filters,
+		"-y",
+		palette,
+	}
+
+	filters = fmt.Sprintf("fps=%d,scale=%d:-1:flags=lanczos [x]; [x][1:v] paletteuse", fps, size)
+
+	cmd2 := []string{
+		"-ss", strconv.Itoa(skipSecond),
+		"-t", strconv.Itoa(duration),
+		"-i", filename,
+		"-i", palette,
+		"-lavfi",
+		filters,
+		"-y",
+		fileid}
+	// cmd1 := fmt.Sprintf("-ss %d -t %d -i \"%s\" -vf \"%s,palettegen\" -y \"%s\"", skipSecond, duration, filename, filters, palette)
+	// cmd2 := fmt.Sprintf("-ss %d -t %d -i \"%s\" -i \"%s\" -lavfi \"%s [x]; [x][1:v] paletteuse\" -y \"%s\"", skipSecond, duration, filename, palette, filters, fileid)
+	// cmd1S := strings.Split(cmd1, " ")
+	// cmd2S := strings.Split(cmd2, " ")
+	// fmt.Printf("%#v\n", cmd1)
+	// fmt.Printf("%#v\n", cmd2)
+
+	// cmd := fmt.Sprintf("ffmpeg -i \"%s\" \"%s\"", filename, fileid)
+	// fmt.Println(cmd)
+	// for _, v := range cmd1 {
+	// 	fmt.Print(v)
+	// 	fmt.Print(" ")
+	// }
+	// fmt.Println("")
+	for _, v := range cmd2 {
+		fmt.Print(v)
+		fmt.Print(" ")
+	}
+	fmt.Println("")
+	
+    var out bytes.Buffer
+	
+	log.Info("stage 1")
+	cmd := exec.Command("ffmpeg", cmd1...)
+    cmd.Stdout = &out
+    err := cmd.Run()
+    if err != nil {
+		log.Warn(err)
+		return ""
+	}
+	
+	log.Info("stage 2")
+	cmd = exec.Command("ffmpeg", cmd2...)
+    cmd.Stdout = &out
+    err = cmd.Run()
+    if err != nil {
+		log.Warn(err)
+		return ""
+    }
+
+	// cmd1Out, cmd1Err := exec.Command("/usr/bin/ffmpeg", cmd1...).Output()
+	// log.Info(cmd1Out, cmd1Err)
+	// cmd2Out, cmd2Err := exec.Command("/usr/bin/ffmpeg", cmd2...).Output()
+	// log.Info(cmd2Out, cmd2Err)
+
+	return fileid
 }
