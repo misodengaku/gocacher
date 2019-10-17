@@ -13,7 +13,7 @@ var tempDir string
 
 func (p *Processor) Init(conn *redis.Client, config map[string]interface{}) {
 	p.conn = conn
-	p.cacheTTL = config["cacheTTL"].(int64)
+	p.cacheTTL = config["cacheTTL"].(int)
 	// p.workers = make(Worker, 1)
 
 	// mutex = new(sync.Mutex)
@@ -33,7 +33,7 @@ func (p *Processor) GetThumbnail(w http.ResponseWriter, path string) {
 		return
 	}
 
-	go func(_path string, img []byte, cacheTTL int64) {
+	go func(_path string, img []byte, cacheTTL int) {
 		status := p.conn.Set(_path, img, time.Duration(cacheTTL)*time.Second)
 		if status.Err() != nil {
 			log.Fatal("set fail", status.Err())

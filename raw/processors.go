@@ -28,7 +28,7 @@ func (p *Processor) getNEFPreview(path string) ([]byte, error) {
 		log.Warn("JPEG encode error:", err)
 	}
 
-	go func(_path string, imgBuf *bytes.Buffer, cacheTTL int64) {
+	go func(_path string, imgBuf *bytes.Buffer, cacheTTL int) {
 		status := p.conn.Set(_path, imgBuf.Bytes(), time.Duration(cacheTTL)*time.Second)
 		if status.Err() != nil {
 			log.Fatal("set fail", status.Err())

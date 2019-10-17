@@ -10,7 +10,7 @@ import (
 func (p *Processor) Init(conn *redis.Client, config map[string]interface{}) {
 	p.conn = conn
 	p.tempDir = config["tempDir"].(string)
-	p.cacheTTL = config["cacheTTL"].(int64)
+	p.cacheTTL = config["cacheTTL"].(int)
 }
 
 func (p *Processor) Terminate() {

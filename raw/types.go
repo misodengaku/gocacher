@@ -4,6 +4,6 @@ import "github.com/go-redis/redis"
 
 type Processor struct {
 	tempDir  string
-	cacheTTL int64
+	cacheTTL int
 	conn     *redis.Client
 }

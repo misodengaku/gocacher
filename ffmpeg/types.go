@@ -3,6 +3,6 @@ package ffmpeg
 import "github.com/go-redis/redis"
 
 type Processor struct {
-	cacheTTL int64
+	cacheTTL int
 	conn     *redis.Client
 }

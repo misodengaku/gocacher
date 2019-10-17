@@ -9,7 +9,7 @@ import (
 
 type Processor struct {
 	workers  []Worker
-	cacheTTL int64
+	cacheTTL int
 	conn     *redis.Client
 }
 

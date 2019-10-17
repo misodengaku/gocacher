@@ -9,7 +9,7 @@ import (
 
 func (p *Processor) Init(conn *redis.Client, config map[string]interface{}) {
 	imagick.Initialize()
-	p.cacheTTL = config["cacheTTL"].(int64)
+	p.cacheTTL = config["cacheTTL"].(int)
 	p.conn = conn
 
 	p.workers = make([]Worker, 1)
