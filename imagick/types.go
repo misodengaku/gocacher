@@ -11,6 +11,8 @@ type Processor struct {
 	workers  []Worker
 	cacheTTL int
 	conn     *redis.Client
+	pool     sync.Pool
+	limit    chan struct{}
 }
 
 type Worker struct {
