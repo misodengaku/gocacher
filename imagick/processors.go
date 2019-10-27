@@ -7,14 +7,14 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-func (p *Processor) Get() *Worker {
-	p.limit <- struct{}{}
-	return p.pool.Get().(*Worker)
+func (p *Processor) Get() Worker {
+//	p.limit <- struct{}{}
+	return p.pool.Get().(Worker)
 }
 
-func (p *Processor) Put(w *Worker) {
+func (p *Processor) Put(w Worker) {
 	p.pool.Put(w)
-	<-p.limit
+//	<-p.limit
 }
 
 func (w *Worker) processGenericImage(path string) ([]byte, error) {
