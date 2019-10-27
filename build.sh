@@ -1,1 +1,1 @@
-go build -o gocacher main.go
+go build -o gocacher main.go types.go
