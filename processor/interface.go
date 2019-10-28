@@ -10,4 +10,5 @@ type Processor interface {
 	Init(*redis.Client, map[string]interface{})
 	Terminate()
 	GetThumbnail(http.ResponseWriter, string)
+	GetProcessableFileExts() []string
 }

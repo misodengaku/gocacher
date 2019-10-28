@@ -9,11 +9,10 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-var tempDir string
-
 func (p *Processor) Init(conn *redis.Client, config map[string]interface{}) {
 	p.conn = conn
 	p.cacheTTL = config["cacheTTL"].(int)
+	p.tempDir = config["tempDir"].(string)
 	// p.workers = make(Worker, 1)
 
 	// mutex = new(sync.Mutex)
@@ -24,7 +23,7 @@ func (p *Processor) Terminate() {
 }
 
 func (p *Processor) GetThumbnail(w http.ResponseWriter, path string) {
-	gif := getMP4Thumbnail(path, 300)
+	gif := p.getMP4Thumbnail(path, 300)
 	log.Info(gif)
 	gifImg, err := ioutil.ReadFile(gif)
 	if err != nil {
@@ -42,4 +41,8 @@ func (p *Processor) GetThumbnail(w http.ResponseWriter, path string) {
 
 	w.Header().Set("Content-Type", "image/gif")
 	w.Write(gifImg)
+}
+
+func (p *Processor) GetProcessableFileExts() []string {
+	return []string{"MP4", "MOV"}
 }

@@ -27,3 +27,7 @@ func (p *Processor) GetThumbnail(w http.ResponseWriter, path string) {
 
 	w.Write(thumb)
 }
+
+func (p *Processor) GetProcessableFileExts() []string {
+	return []string{"NEF"}
+}
