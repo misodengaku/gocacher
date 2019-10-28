@@ -17,7 +17,7 @@ func (p *Processor) getMP4Thumbnail(filename string, targetWidth uint) string {
 	fileid := filepath.Join(p.tempDir, hex.EncodeToString(hash[:])+".gif")
 	palette := filepath.Join(p.tempDir, hex.EncodeToString(hash[:])+".png")
 
-	skipSecond := 10
+	skipSecond := 0
 	duration := 10
 	fps := 4
 	size := 300
@@ -32,7 +32,6 @@ func (p *Processor) getMP4Thumbnail(filename string, targetWidth uint) string {
 		"-vf", filters,
 		"-y",
 		palette}
-	
 
 	filters = fmt.Sprintf("fps=%d,scale=%d:-1:flags=lanczos [x]; [x][1:v] paletteuse", fps, size)
 
