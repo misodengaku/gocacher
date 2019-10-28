@@ -11,11 +11,11 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-func getMP4Thumbnail(filename string, targetWidth uint) string {
+func (p *Processor) getMP4Thumbnail(filename string, targetWidth uint) string {
 
 	hash := sha256.Sum256([]byte(filename))
-	fileid := filepath.Join(tempDir, hex.EncodeToString(hash[:])+".gif")
-	palette := filepath.Join(tempDir, hex.EncodeToString(hash[:])+".png")
+	fileid := filepath.Join(p.tempDir, hex.EncodeToString(hash[:])+".gif")
+	palette := filepath.Join(p.tempDir, hex.EncodeToString(hash[:])+".png")
 
 	skipSecond := 10
 	duration := 10
@@ -31,8 +31,8 @@ func getMP4Thumbnail(filename string, targetWidth uint) string {
 		"-i", filename,
 		"-vf", filters,
 		"-y",
-		palette,
-	}
+		palette}
+	
 
 	filters = fmt.Sprintf("fps=%d,scale=%d:-1:flags=lanczos [x]; [x][1:v] paletteuse", fps, size)
 
@@ -52,21 +52,12 @@ func getMP4Thumbnail(filename string, targetWidth uint) string {
 	}
 	fmt.Println("")
 
-	var out bytes.Buffer
+	var out1 bytes.Buffer
 
 	log.Info("stage 1")
-	cmd := exec.Command("ffmpeg", cmd1...)
-	cmd.Stdout = &out
-	err := cmd.Run()
-	if err != nil {
-		log.Warn(err)
-		return ""
-	}
-
-	log.Info("stage 2")
-	cmd = exec.Command("ffmpeg", cmd2...)
-	cmd.Stdout = &out
-	err = cmd.Run()
+	movToPaletteCmd := exec.Command("ffmpeg", cmd1...)
+	movToPaletteCmd.Stdout = &out1
+	err := movToPaletteCmd.Run()
 	if err != nil {
 		log.Warn(err)
 		return ""
@@ -75,7 +66,19 @@ func getMP4Thumbnail(filename string, targetWidth uint) string {
 	// cmd1Out, cmd1Err := exec.Command("/usr/bin/ffmpeg", cmd1...).Output()
 	// log.Info(cmd1Out, cmd1Err)
 	// cmd2Out, cmd2Err := exec.Command("/usr/bin/ffmpeg", cmd2...).Output()
-	// log.Info(cmd2Out, cmd2Err)
+
+	log.Info("stage 2")
+	paletteToGifCmd := exec.Command("ffmpeg", cmd2...)
+	// paletteToGifCmd.Stdout = &out2
+	// err = paletteToGifCmd.Run()
+	cmd2Out, cmd2Err := paletteToGifCmd.Output()
+	log.Info(cmd2Out, cmd2Err)
+	if cmd2Err != nil {
+		log.Warn("stage2 failed: ", filename)
+		log.Warn(cmd2Err)
+		return ""
+	}
+
 
 	return fileid
 }

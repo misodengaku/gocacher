@@ -21,19 +21,13 @@ import (
 var conn *redis.Client
 var config Config
 
-var RawImageExts = []string{"NEF"} //, "CR2", "ARW"}
-var MovieExts = []string{"MOV", "MP4", "M4V"}
-
 func handler(w http.ResponseWriter, r *http.Request) {
-
 	path := filepath.Join(config.FsRoot, r.URL.Path)
 	log.Info(path, ":\t", r.Method)
 	exists, err := conn.Exists(path).Result()
 	if err != nil {
 		log.Warn(err)
 	}
-
-	log.Info(path, " cache is exists?:", exists)
 
 	// disable cache
 	// exists = 0
@@ -59,28 +53,27 @@ func handler(w http.ResponseWriter, r *http.Request) {
 
 	// start := time.Now()
 
-	filetype := strings.ToUpper(strings.Trim(filepath.Ext(path), "."))
-	for _, v := range RawImageExts {
-		if v == filetype {
-			// ReturnRAWPreview(w, path)
+	fileext := strings.ToUpper(strings.Trim(filepath.Ext(path), "."))
+	var fallback processor.Processor
+	fallback = nil
 
-			// TODO: processor選択
-			processors[2].GetThumbnail(w, path)
-			return
+	for _, p := range processors {
+		pa := p.GetProcessableFileExts()
+		for _, v := range pa {
+			if v == fileext {
+				p.GetThumbnail(w, path)
+			}
+			if fallback == nil && v == "*" {
+				fallback = p
+				break
+			}
 		}
 	}
 
-	for _, v := range MovieExts {
-		if v == filetype {
-			// ReturnMoviePreview(w, path)
-			// TODO: processor選択
-			processors[1].GetThumbnail(w, path)
-			return
-		}
+	if fallback != nil {
+		fallback.GetThumbnail(w, path)
 	}
 
-	// TODO: processor選択
-	processors[0].GetThumbnail(w, path)
 }
 
 var processors []processor.Processor
