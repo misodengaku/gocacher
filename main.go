@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	_ "net/http/pprof"
+
 	"github.com/go-redis/redis"
 	log "github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v2"
@@ -129,5 +131,10 @@ func main() {
 	http.HandleFunc("/", handler) // ハンドラを登録してウェブページを表示させる
 
 	log.Infoln("start listen")
+
+	go func() {
+		log.Println(http.ListenAndServe("localhost:6060", nil))
+	}()
+
 	http.ListenAndServe(config.ListenAddr, nil)
 }
