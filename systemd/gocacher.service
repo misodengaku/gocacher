@@ -1,7 +1,7 @@
 [Unit]
 Description=gocacher
-After=redis.service
-Requires=redis.service
+Requires=redis-server.service
+After=redis-server.service
 [Service]
 TimeoutStartSec=0
 Restart=always
