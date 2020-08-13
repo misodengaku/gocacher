@@ -74,6 +74,8 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		fallback.GetThumbnail(w, path)
 	}
 
+	log.Info("can't find any suitable processor")
+	w.WriteHeader(500)
 }
 
 var processors []processor.Processor
