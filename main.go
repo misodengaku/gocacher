@@ -11,6 +11,9 @@ import (
 	_ "net/http/pprof"
 
 	"github.com/go-redis/redis"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	log "github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v2"
 
@@ -20,12 +23,21 @@ import (
 	"github.com/misodengaku/gocacher/raw"
 )
 
-var conn *redis.Client
-var config Config
+var (
+	opsProcessed = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "gocacher_cache_hit_count",
+		Help: "The total number of cache hit",
+	})
+	processors []processor.Processor
+	conn       *redis.Client
+	config     Config
+)
 
 func handler(w http.ResponseWriter, r *http.Request) {
 	path := filepath.Join(config.FsRoot, r.URL.Path)
-	log.Info(path, ":\t", r.Method)
+	log.WithFields(log.Fields{
+		"path": r.URL.Path,
+	}).Info("GET")
 	exists, err := conn.Exists(path).Result()
 	if err != nil {
 		log.Warn(err)
@@ -36,9 +48,10 @@ func handler(w http.ResponseWriter, r *http.Request) {
 
 	if exists == 1 {
 		start := time.Now()
-		log.Info(path, ":\tCache hit")
+		log.WithFields(log.Fields{
+			"path": r.URL.Path,
+		}).Info("Cache hit")
 		thumb, _ := conn.Get(path).Bytes()
-		log.Info(string(thumb[:4]))
 		if string(thumb[:4]) == "JFIF" {
 			w.Header().Set("Content-Type", "image/jpeg")
 		} else {
@@ -49,7 +62,11 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		ms := int64((end.Sub(start)) / time.Microsecond)
 		// log.Info(start)
 		// log.Info(end)
-		log.Info(path, ":\tContents responded (from cache) ", ms, "ms")
+
+		log.WithFields(log.Fields{
+			"path":     r.URL.Path,
+			"duration": ms,
+		}).Info("Contents responded (from cache)")
 		return
 	}
 
@@ -64,6 +81,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		for _, v := range pa {
 			if v == fileext {
 				p.GetThumbnail(w, path)
+				return
 			}
 			if fallback == nil && v == "*" {
 				fallback = p
@@ -79,8 +97,6 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	log.Info("can't find any suitable processor")
 	w.WriteHeader(500)
 }
-
-var processors []processor.Processor
 
 func main() {
 
@@ -105,9 +121,6 @@ func main() {
 		panic("config unmarshal error: " + err.Error())
 	}
 
-	// imagick.Initialize()
-	// defer imagick.Terminate()
-
 	conn = redis.NewClient(&redis.Options{
 		Addr:     config.RedisAddr,
 		Password: "", // no password set
@@ -128,13 +141,24 @@ func main() {
 		v.Init(conn, pc)
 	}
 
-	http.HandleFunc("/", handler) // ハンドラを登録してウェブページを表示させる
+	mainServer := http.NewServeMux()
+	mainServer.HandleFunc("/", handler)
+
+	// promhttp
+	promServer := http.NewServeMux()
+	promServer.Handle("/metrics", promhttp.Handler())
 
 	log.Infoln("start listen")
 
 	go func() {
+		// promhttp
+		log.Println(http.ListenAndServe(config.PromHTTPListenAddr, promServer))
+	}()
+
+	go func() {
+		// pprof
 		log.Println(http.ListenAndServe("localhost:6060", nil))
 	}()
 
-	http.ListenAndServe(config.ListenAddr, nil)
+	http.ListenAndServe(config.ListenAddr, mainServer)
 }

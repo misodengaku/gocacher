@@ -43,6 +43,7 @@ func (p *Processor) getMP4Thumbnail(filename string, targetWidth uint) string {
 		log.Warn(err)
 		return ""
 	}
+	log.Info("encoded: ", fileid)
 
 	return fileid
 }

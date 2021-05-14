@@ -37,7 +37,7 @@ func (p *Processor) GetThumbnail(w http.ResponseWriter, path string) {
 	worker := p.Get()
 	defer p.Put(worker)
 
-	thumb, err := worker.processGenericImage(path) // log.Info(path, ":\tCache set")
+	thumb, err := worker.processGenericImage(path)
 
 	if err != nil {
 		w.WriteHeader(500)

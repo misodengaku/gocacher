@@ -11,4 +11,11 @@ type Processor interface {
 	Terminate()
 	GetThumbnail(http.ResponseWriter, string)
 	GetProcessableFileExts() []string
+	// GetMetrics() Metrics
+}
+
+type Metrics struct {
+	ProcessedCount     uint64
+	CacheHitCount      uint64
+	UnprocessableCount uint64
 }
