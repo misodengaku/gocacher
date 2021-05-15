@@ -1,0 +1,11 @@
+[Unit]
+Description=gocacher
+Requires=redis-server.service docker.service
+After=redis-server.service docker.service
+[Service]
+TimeoutStartSec=0
+Restart=always
+ExecStart=-/usr/bin/docker run -v /tank1:/tank1:ro --net=host --name gocacher gocacher
+ExecStop=-/usr/bin/docker kill gocacher
+[Install]
+WantedBy=multi-user.target

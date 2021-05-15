@@ -3,6 +3,7 @@ RUN apt-get update && apt-get -y upgrade && apt-get install -y libmagickwand-dev
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 RUN mkdir /opt/gocacher
+# RUN sed -i -e 's%<policy domain="coder" rights="none" pattern="PDF" />%<!--<policy domain="coder" rights="none" pattern="PDF" />-->%' /etc/ImageMagick-6/policy.xml
 
 COPY ffmpeg/ /opt/gocacher/ffmpeg/
 COPY imagick/ /opt/gocacher/imagick/
