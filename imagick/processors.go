@@ -72,7 +72,10 @@ func (w *Worker) getThumbnailFromBlob(targetWidth, targetHeight uint) []byte {
 		panic(err)
 	}
 
-	return w.mw.GetImageBlob()
+	rd := w.mw.GetImageBlob()
+	w.mw.Clear()
+
+	return rd
 }
 
 func getResizedWH(width, height, targetWidth, targetHeight uint) (resizedWidth, resizedHeight uint) {
