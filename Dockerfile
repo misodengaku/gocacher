@@ -13,10 +13,11 @@ COPY raw/ /opt/gocacher/raw/
 COPY main.go /opt/gocacher/
 COPY types.go /opt/gocacher/
 COPY go.mod /opt/gocacher/
+COPY go.sum /opt/gocacher/
 
 
 WORKDIR /opt/gocacher/
-RUN go get && go build -o gocacher main.go types.go
+RUN go build
 
 COPY config.yml /etc/gocacher/config.yml
 

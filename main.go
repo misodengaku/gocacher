@@ -1,11 +1,16 @@
 package main
 
 import (
+	"encoding/json"
+	"io/fs"
 	"io/ioutil"
 	"net/http"
 	_ "net/http/pprof"
+	"os"
 	"path/filepath"
+	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	_ "net/http/pprof"
@@ -24,9 +29,17 @@ import (
 )
 
 var (
-	opsProcessed = promauto.NewCounter(prometheus.CounterOpts{
+	cacheHitCounter = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "gocacher_cache_hit_count",
 		Help: "The total number of cache hit",
+	})
+	processedCounter = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "gocacher_processed_count",
+		Help: "The total number of processed requests",
+	})
+	failedCounter = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "gocacher_failed_count",
+		Help: "The total number of failed requests",
 	})
 	processors []processor.Processor
 	conn       *redis.Client
@@ -35,9 +48,102 @@ var (
 
 func handler(w http.ResponseWriter, r *http.Request) {
 	path := filepath.Join(config.FsRoot, r.URL.Path)
+	checkPattern := filepath.Join(config.FsRoot, "*")
 	log.WithFields(log.Fields{
-		"path": r.URL.Path,
+		"path":     r.URL.Path,
+		"realpath": path,
+		"check":    checkPattern,
 	}).Info("GET")
+
+	if isValid, _ := filepath.Match(checkPattern, path); !isValid {
+		if path != config.FsRoot {
+			w.WriteHeader(500)
+			return
+		}
+	}
+
+	fi, err := os.Stat(path)
+	if err != nil {
+		log.Warn(err)
+		w.WriteHeader(404)
+		return
+	}
+	if fi.IsDir() {
+		log.WithFields(log.Fields{
+			"path": path,
+		}).Info("GET dirlist")
+		dirEntries, err := os.ReadDir(path)
+		if err != nil {
+			log.Warn(err)
+			w.WriteHeader(500)
+			return
+		}
+		filelist := make([]NginxCompatibleFileInfo, 0, len(dirEntries))
+		dirlist := make([]NginxCompatibleFileInfo, 0, len(dirEntries))
+		wg := &sync.WaitGroup{}
+		wg.Add(len(dirEntries))
+		for i, v := range dirEntries {
+			go func(index int, file fs.DirEntry) {
+				fsinfo, _ := file.Info()
+				if fsinfo.IsDir() {
+					dirlist = append(dirlist, NginxCompatibleFileInfo{
+						Name:            file.Name(),
+						Type:            "directory",
+						ModifiedTime:    fsinfo.ModTime().UTC().Format("Mon, 02 Jan 2006 15:04:05 MST"),
+						ModifiedTimeRaw: fsinfo.ModTime().UTC(),
+					})
+				} else {
+					filelist = append(filelist, NginxCompatibleFileInfo{
+						Name:            file.Name(),
+						Type:            "file",
+						ModifiedTime:    fsinfo.ModTime().UTC().Format("Mon, 02 Jan 2006 15:04:05 MST"),
+						ModifiedTimeRaw: fsinfo.ModTime().UTC(),
+						Size:            fsinfo.Size(),
+					})
+				}
+				wg.Done()
+			}(i, v)
+		}
+		wg.Wait()
+		wg.Add(2)
+		go func() {
+			sort.Slice(dirlist, func(i, j int) bool { return strings.ToLower(dirlist[i].Name) < strings.ToLower(dirlist[j].Name) })
+			wg.Done()
+		}()
+		go func() {
+			switch r.FormValue("order") {
+			case "size":
+				sort.Slice(filelist, func(i, j int) bool { return filelist[i].Size < filelist[j].Size })
+			case "size-reverse":
+				sort.Slice(filelist, func(i, j int) bool { return filelist[i].Size > filelist[j].Size })
+			case "date":
+				sort.Slice(filelist, func(i, j int) bool {
+					return filelist[i].ModifiedTimeRaw.UnixNano() < filelist[j].ModifiedTimeRaw.UnixNano()
+				})
+			case "date-reverse":
+				sort.Slice(filelist, func(i, j int) bool {
+					return filelist[i].ModifiedTimeRaw.UnixNano() > filelist[j].ModifiedTimeRaw.UnixNano()
+				})
+			case "name-reverse":
+				sort.Slice(filelist, func(i, j int) bool { return strings.ToLower(filelist[i].Name) > strings.ToLower(filelist[j].Name) })
+			default:
+				sort.Slice(filelist, func(i, j int) bool { return strings.ToLower(filelist[i].Name) < strings.ToLower(filelist[j].Name) })
+			}
+
+			wg.Done()
+		}()
+		wg.Wait()
+		respList := append(dirlist, filelist...)
+		resp, err := json.Marshal(respList)
+		if err != nil {
+			log.Warn(err)
+			w.WriteHeader(500)
+			return
+		}
+		w.Write(resp)
+		return
+	}
+
 	exists, err := conn.Exists(path).Result()
 	if err != nil {
 		log.Warn(err)
@@ -67,6 +173,8 @@ func handler(w http.ResponseWriter, r *http.Request) {
 			"path":     r.URL.Path,
 			"duration": ms,
 		}).Info("Contents responded (from cache)")
+		cacheHitCounter.Inc()
+		processedCounter.Inc()
 		return
 	}
 
@@ -81,6 +189,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		for _, v := range pa {
 			if v == fileext {
 				p.GetThumbnail(w, path)
+				processedCounter.Inc()
 				return
 			}
 			if fallback == nil && v == "*" {
@@ -92,6 +201,8 @@ func handler(w http.ResponseWriter, r *http.Request) {
 
 	if fallback != nil {
 		fallback.GetThumbnail(w, path)
+		processedCounter.Inc()
+		return
 	}
 
 	log.Info("can't find any suitable processor")
