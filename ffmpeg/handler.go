@@ -23,11 +23,11 @@ func (p *Processor) Terminate() {
 }
 
 func (p *Processor) GetThumbnail(w http.ResponseWriter, path string) {
-	gif := p.getMP4Thumbnail(path, 300)
-	log.Info(gif)
-	gifImg, err := ioutil.ReadFile(gif)
+	thumb, mime := p.getAnimationWebPThumbnail(path, 300)
+	log.Info(thumb, mime)
+	thumbImg, err := ioutil.ReadFile(thumb)
 	if err != nil {
-		log.Info("gif load error ", err.Error())
+		log.Info("thumbnail load error ", err.Error())
 		w.WriteHeader(500)
 		return
 	}
@@ -37,10 +37,10 @@ func (p *Processor) GetThumbnail(w http.ResponseWriter, path string) {
 		if status.Err() != nil {
 			log.Fatal("set fail", status.Err())
 		}
-	}(path, gifImg, p.cacheTTL)
+	}(path, thumbImg, p.cacheTTL)
 
-	w.Header().Set("Content-Type", "image/gif")
-	w.Write(gifImg)
+	w.Header().Set("Content-Type", mime)
+	w.Write(thumbImg)
 }
 
 func (p *Processor) GetProcessableFileExts() []string {

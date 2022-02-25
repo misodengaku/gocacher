@@ -41,6 +41,7 @@ func (p *Processor) GetThumbnail(w http.ResponseWriter, path string) {
 
 	if err != nil {
 		w.WriteHeader(500)
+		w.Write([]byte(err.Error()))
 		return
 	}
 	w.Write(thumb)

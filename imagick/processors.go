@@ -8,52 +8,41 @@ import (
 )
 
 func (p *Processor) Get() Worker {
-//	p.limit <- struct{}{}
+	//	p.limit <- struct{}{}
 	return p.pool.Get().(Worker)
 }
 
 func (p *Processor) Put(w Worker) {
 	p.pool.Put(w)
-//	<-p.limit
+	//	<-p.limit
 }
 
 func (w *Worker) processGenericImage(path string) ([]byte, error) {
-	// start := time.Now()
 	bs, err := ioutil.ReadFile(path)
 	if err != nil {
-		// log.Warn(err)
-		// if strings.Contains(err.Error(), "no such file or directory") {
-		// 	w.WriteHeader(404)
-		// } else {
-		// 	w.WriteHeader(500)
-		// }
 		return nil, err
 	}
 	w.mutex.Lock()
 	err = w.mw.ReadImageBlob(bs)
 	if err != nil {
-		// w.WriteHeader(500)
 		return nil, err
 	}
 	thumb := w.getThumbnailFromBlob(300, 300)
 	w.mutex.Unlock()
-
-	// end_conv := time.Now()
 
 	status := w.p.conn.Set(path, thumb, time.Duration(w.p.cacheTTL)*time.Second)
 	if status.Err() != nil {
 		log.Fatal("set fail")
 	}
 
-	// end_set := time.Now()
-	// conv_ms := int64((end_conv.Sub(start)) / time.Microsecond)
-	// set_ms := int64((end_set.Sub(end_conv)) / time.Microsecond)
-
 	return thumb, nil
 }
 
 func (w *Worker) getThumbnailFromBlob(targetWidth, targetHeight uint) []byte {
 	var err error
+
+	w.mw.SetIteratorIndex(0)
+
 	width, height := w.mw.GetImageWidth(), w.mw.GetImageHeight()
 	resizedWidth, resizedHeight := getResizedWH(width, height, targetWidth, targetHeight)
 	err = w.mw.ThumbnailImage(resizedWidth, resizedHeight)
@@ -67,7 +56,11 @@ func (w *Worker) getThumbnailFromBlob(targetWidth, targetHeight uint) []byte {
 	if err != nil {
 		panic(err)
 	}
-	err = w.mw.SetImageCompressionQuality(95)
+	err = w.mw.SetImageFormat("webp")
+	if err != nil {
+		panic(err)
+	}
+	err = w.mw.SetImageCompressionQuality(80)
 	if err != nil {
 		panic(err)
 	}
