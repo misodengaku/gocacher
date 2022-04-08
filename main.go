@@ -24,6 +24,7 @@ import (
 
 	"github.com/misodengaku/gocacher/ffmpeg"
 	"github.com/misodengaku/gocacher/imagick"
+	"github.com/misodengaku/gocacher/pdf"
 	"github.com/misodengaku/gocacher/processor"
 	"github.com/misodengaku/gocacher/raw"
 )
@@ -220,6 +221,7 @@ func main() {
 		new(imagick.Processor),
 		new(ffmpeg.Processor),
 		new(raw.Processor),
+		new(pdf.Processor),
 	}
 
 	configBin, err := ioutil.ReadFile("/etc/gocacher/config.yml")
