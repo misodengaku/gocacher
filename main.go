@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -62,9 +63,6 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if fi.IsDir() {
-		log.WithFields(log.Fields{
-			"path": path,
-		}).Info("GET dirlist")
 		dirEntries, err := os.ReadDir(path)
 		if err != nil {
 			log.Warn(err)
@@ -104,36 +102,52 @@ func handler(w http.ResponseWriter, r *http.Request) {
 			}(i, v)
 		}
 		wg.Wait()
-		wg.Add(2)
-		go func() {
-			sort.Slice(dirlist, func(i, j int) bool { return strings.ToLower(dirlist[i].Name) < strings.ToLower(dirlist[j].Name) })
-			wg.Done()
-		}()
-		go func() {
-			switch r.FormValue("order") {
-			case "size":
-				sort.Slice(filelist, func(i, j int) bool { return filelist[i].Size < filelist[j].Size })
-			case "size-reverse":
-				sort.Slice(filelist, func(i, j int) bool { return filelist[i].Size > filelist[j].Size })
-			case "date":
-				sort.Slice(filelist, func(i, j int) bool {
-					return filelist[i].ModifiedTimeRaw.UnixNano() < filelist[j].ModifiedTimeRaw.UnixNano()
-				})
-			case "date-reverse":
-				sort.Slice(filelist, func(i, j int) bool {
-					return filelist[i].ModifiedTimeRaw.UnixNano() > filelist[j].ModifiedTimeRaw.UnixNano()
-				})
-			case "name-reverse":
-				sort.Slice(filelist, func(i, j int) bool { return strings.ToLower(filelist[i].Name) > strings.ToLower(filelist[j].Name) })
-			default:
-				sort.Slice(filelist, func(i, j int) bool { return strings.ToLower(filelist[i].Name) < strings.ToLower(filelist[j].Name) })
-			}
 
-			wg.Done()
-		}()
-		wg.Wait()
+		// sort dirlist
+		sort.Slice(dirlist, func(i, j int) bool { return strings.ToLower(dirlist[i].Name) < strings.ToLower(dirlist[j].Name) })
+
+		// sort filelist
+		switch r.FormValue("order") {
+		case "size":
+			sort.Slice(filelist, func(i, j int) bool { return filelist[i].Size < filelist[j].Size })
+		case "size-reverse":
+			sort.Slice(filelist, func(i, j int) bool { return filelist[i].Size > filelist[j].Size })
+		case "date":
+			sort.Slice(filelist, func(i, j int) bool {
+				return filelist[i].ModifiedTimeRaw.UnixNano() < filelist[j].ModifiedTimeRaw.UnixNano()
+			})
+		case "date-reverse":
+			sort.Slice(filelist, func(i, j int) bool {
+				return filelist[i].ModifiedTimeRaw.UnixNano() > filelist[j].ModifiedTimeRaw.UnixNano()
+			})
+		case "name-reverse":
+			sort.Slice(filelist, func(i, j int) bool { return strings.ToLower(filelist[i].Name) > strings.ToLower(filelist[j].Name) })
+		default:
+			sort.Slice(filelist, func(i, j int) bool { return strings.ToLower(filelist[i].Name) < strings.ToLower(filelist[j].Name) })
+		}
+
 		respList := append(dirlist, filelist...)
-		resp, err := json.Marshal(respList)
+		startAt, err := strconv.Atoi(r.FormValue("start_at"))
+		if err != nil {
+			startAt = 0
+		}
+		size, err := strconv.Atoi(r.FormValue("size"))
+		if err != nil {
+			size = len(filelist)
+		}
+		if startAt >= len(respList) {
+			startAt = 0
+		}
+		if startAt+size >= len(respList) {
+			size = len(respList) - startAt
+		}
+		resp, err := json.Marshal(respList[startAt : startAt+size])
+		log.WithFields(log.Fields{
+			"path":        path,
+			"start_at":    startAt,
+			"size":        size,
+			"dir_entries": len(dirEntries),
+		}).Info("GET dirlist")
 		if err != nil {
 			log.Warn(err)
 			w.WriteHeader(500)
