@@ -72,20 +72,25 @@ func handler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		filelist := make([]NginxCompatibleFileInfo, 0, len(dirEntries))
+		filelistMutex := sync.Mutex{}
 		dirlist := make([]NginxCompatibleFileInfo, 0, len(dirEntries))
+		dirlistMutex := sync.Mutex{}
 		wg := &sync.WaitGroup{}
 		wg.Add(len(dirEntries))
 		for i, v := range dirEntries {
 			go func(index int, file fs.DirEntry) {
 				fsinfo, _ := file.Info()
 				if fsinfo.IsDir() {
+					dirlistMutex.Lock()
 					dirlist = append(dirlist, NginxCompatibleFileInfo{
 						Name:            file.Name(),
 						Type:            "directory",
 						ModifiedTime:    fsinfo.ModTime().UTC().Format("Mon, 02 Jan 2006 15:04:05 MST"),
 						ModifiedTimeRaw: fsinfo.ModTime().UTC(),
 					})
+					dirlistMutex.Unlock()
 				} else {
+					filelistMutex.Lock()
 					filelist = append(filelist, NginxCompatibleFileInfo{
 						Name:            file.Name(),
 						Type:            "file",
@@ -93,6 +98,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 						ModifiedTimeRaw: fsinfo.ModTime().UTC(),
 						Size:            fsinfo.Size(),
 					})
+					filelistMutex.Unlock()
 				}
 				wg.Done()
 			}(i, v)
