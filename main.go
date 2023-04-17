@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"io/fs"
-	"io/ioutil"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
@@ -48,20 +47,12 @@ var (
 )
 
 func handler(w http.ResponseWriter, r *http.Request) {
-	path := filepath.Join(config.FsRoot, r.URL.Path)
-	checkPattern := filepath.Join(config.FsRoot, "*")
+	urlPath := r.URL.Path
+	path := filepath.Join(config.FsRoot, urlPath)
 	log.WithFields(log.Fields{
 		"path":     r.URL.Path,
 		"realpath": path,
-		"check":    checkPattern,
 	}).Info("GET")
-
-	if isValid, _ := filepath.Match(checkPattern, path); !isValid {
-		if path != config.FsRoot {
-			w.WriteHeader(500)
-			return
-		}
-	}
 
 	fi, err := os.Stat(path)
 	if err != nil {
@@ -212,9 +203,9 @@ func handler(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 
-	tempDir, err := ioutil.TempDir("", "gocacher")
+	tempDir, err := os.MkdirTemp(os.TempDir(), "gocacher")
 	if err != nil {
-		log.Fatal(err)
+		panic("failed to create temp dir: " + err.Error())
 	}
 
 	processors = []processor.Processor{
@@ -224,7 +215,7 @@ func main() {
 		new(pdf.Processor),
 	}
 
-	configBin, err := ioutil.ReadFile("/etc/gocacher/config.yml")
+	configBin, err := os.ReadFile("/etc/gocacher/config.yml")
 	if err != nil {
 		panic("config read error: " + err.Error())
 	}
