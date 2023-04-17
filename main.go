@@ -285,5 +285,5 @@ func main() {
 		log.Println(http.ListenAndServe("localhost:6060", nil))
 	}()
 
-	http.ListenAndServe(config.ListenAddr, mainServer)
+	log.Errorln(http.ListenAndServe(config.ListenAddr, mainServer))
 }
