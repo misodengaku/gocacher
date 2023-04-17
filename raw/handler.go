@@ -3,7 +3,7 @@ package raw
 import (
 	"net/http"
 
-	"github.com/go-redis/redis"
+	"github.com/go-redis/redis/v8"
 	log "github.com/sirupsen/logrus"
 )
 

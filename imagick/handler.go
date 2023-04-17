@@ -1,10 +1,12 @@
 package imagick
 
 import (
+	"context"
 	"net/http"
 	"sync"
+	"time"
 
-	"github.com/go-redis/redis"
+	"github.com/go-redis/redis/v8"
 	"gopkg.in/gographics/imagick.v2/imagick"
 )
 
@@ -37,8 +39,9 @@ func (p *Processor) GetThumbnail(w http.ResponseWriter, path string) {
 	worker := p.Get()
 	defer p.Put(worker)
 
-	thumb, err := worker.processGenericImage(path)
-
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	thumb, err := worker.processGenericImage(ctx, path)
+	cancel()
 	if err != nil {
 		w.WriteHeader(500)
 		w.Write([]byte(err.Error()))

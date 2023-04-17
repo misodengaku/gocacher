@@ -3,7 +3,7 @@ package imagick
 import (
 	"sync"
 
-	"github.com/go-redis/redis"
+	"github.com/go-redis/redis/v8"
 	"gopkg.in/gographics/imagick.v2/imagick"
 )
 

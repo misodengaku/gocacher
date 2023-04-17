@@ -1,6 +1,7 @@
 package imagick
 
 import (
+	"context"
 	"io/ioutil"
 	"time"
 
@@ -17,7 +18,7 @@ func (p *Processor) Put(w Worker) {
 	//	<-p.limit
 }
 
-func (w *Worker) processGenericImage(path string) ([]byte, error) {
+func (w *Worker) processGenericImage(ctx context.Context, path string) ([]byte, error) {
 	bs, err := ioutil.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -30,7 +31,7 @@ func (w *Worker) processGenericImage(path string) ([]byte, error) {
 	thumb := w.getThumbnailFromBlob(300, 300)
 	w.mutex.Unlock()
 
-	status := w.p.conn.Set(path, thumb, time.Duration(w.p.cacheTTL)*time.Second)
+	status := w.p.conn.Set(ctx, path, thumb, time.Duration(w.p.cacheTTL)*time.Second)
 	if status.Err() != nil {
 		log.Fatal("set fail")
 	}

@@ -1,11 +1,12 @@
 package pdf
 
 import (
+	"context"
 	"io/ioutil"
 	"net/http"
 	"time"
 
-	"github.com/go-redis/redis"
+	"github.com/go-redis/redis/v8"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -33,9 +34,11 @@ func (p *Processor) GetThumbnail(w http.ResponseWriter, path string) {
 	}
 
 	go func(_path string, img []byte, cacheTTL int) {
-		status := p.conn.Set(_path, img, time.Duration(cacheTTL)*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		status := p.conn.Set(ctx, _path, img, time.Duration(cacheTTL)*time.Second)
+		cancel()
 		if status.Err() != nil {
-			log.Fatal("set fail", status.Err())
+			log.Fatal("set fail: ", status.Err())
 		}
 	}(path, thumbImg, p.cacheTTL)
 

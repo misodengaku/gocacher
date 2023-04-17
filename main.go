@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"io/fs"
 	"net/http"
@@ -14,7 +15,7 @@ import (
 
 	_ "net/http/pprof"
 
-	"github.com/go-redis/redis"
+	"github.com/go-redis/redis/v8"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -136,7 +137,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	exists, err := conn.Exists(path).Result()
+	exists, err := conn.Exists(r.Context(), path).Result()
 	if err != nil {
 		log.Warn(err)
 	}
@@ -149,7 +150,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		log.WithFields(log.Fields{
 			"path": r.URL.Path,
 		}).Info("Cache hit")
-		thumb, _ := conn.Get(path).Bytes()
+		thumb, _ := conn.Get(r.Context(), path).Bytes()
 		if string(thumb[:4]) == "JFIF" {
 			w.Header().Set("Content-Type", "image/jpeg")
 		} else {
@@ -232,7 +233,7 @@ func main() {
 	})
 	defer conn.Close()
 
-	_, err = conn.Ping().Result()
+	_, err = conn.Ping(context.Background()).Result()
 	if err != nil {
 		log.Fatal("connection fail: redis")
 	}

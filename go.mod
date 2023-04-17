@@ -3,17 +3,18 @@ module github.com/misodengaku/gocacher
 go 1.16
 
 require (
-	github.com/go-redis/redis v6.15.9+incompatible
-	github.com/golang/protobuf v1.5.2 // indirect
-	github.com/onsi/ginkgo v1.10.2 // indirect
-	github.com/onsi/gomega v1.7.0 // indirect
-	github.com/prometheus/client_golang v1.11.0
-	github.com/prometheus/common v0.30.0 // indirect
-	github.com/prometheus/procfs v0.7.3 // indirect
-	github.com/sirupsen/logrus v1.8.1
-	golang.org/x/image v0.0.0-20210628002857-a66eb6448b8d
-	golang.org/x/sys v0.0.0-20210823070655-63515b42dcdf // indirect
-	google.golang.org/protobuf v1.27.1 // indirect
-	gopkg.in/gographics/imagick.v2 v2.6.0
+	github.com/go-redis/redis/v8 v8.11.5
+	github.com/prometheus/client_golang v1.14.0
+	github.com/sirupsen/logrus v1.9.0
+	golang.org/x/image v0.3.0
+	gopkg.in/gographics/imagick.v2 v2.6.2
 	gopkg.in/yaml.v2 v2.4.0
+)
+
+require (
+	github.com/cespare/xxhash/v2 v2.2.0 // indirect
+	github.com/kr/pretty v0.3.1 // indirect
+	github.com/prometheus/common v0.39.0 // indirect
+	github.com/prometheus/procfs v0.9.0 // indirect
+	golang.org/x/sys v0.4.0 // indirect
 )
