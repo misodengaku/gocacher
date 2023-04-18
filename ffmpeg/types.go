@@ -1,6 +1,6 @@
 package ffmpeg
 
-import "github.com/go-redis/redis"
+import "github.com/go-redis/redis/v8"
 
 type Processor struct {
 	cacheTTL int

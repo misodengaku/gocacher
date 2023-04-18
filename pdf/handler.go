@@ -1,4 +1,4 @@
-package ffmpeg
+package pdf
 
 import (
 	"context"
@@ -24,7 +24,7 @@ func (p *Processor) Terminate() {
 }
 
 func (p *Processor) GetThumbnail(w http.ResponseWriter, path string) {
-	thumb, mime := p.getAnimationWebPThumbnail(path, 300)
+	thumb, mime := p.getPDFThumbnail(path, 300)
 	log.Info(thumb, mime)
 	thumbImg, err := ioutil.ReadFile(thumb)
 	if err != nil {
@@ -47,5 +47,5 @@ func (p *Processor) GetThumbnail(w http.ResponseWriter, path string) {
 }
 
 func (p *Processor) GetProcessableFileExts() []string {
-	return []string{"MP4", "MOV"}
+	return []string{"PDF"}
 }

@@ -1,21 +1,22 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"io/fs"
-	"io/ioutil"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	_ "net/http/pprof"
 
-	"github.com/go-redis/redis"
+	"github.com/go-redis/redis/v8"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -24,6 +25,7 @@ import (
 
 	"github.com/misodengaku/gocacher/ffmpeg"
 	"github.com/misodengaku/gocacher/imagick"
+	"github.com/misodengaku/gocacher/pdf"
 	"github.com/misodengaku/gocacher/processor"
 	"github.com/misodengaku/gocacher/raw"
 )
@@ -47,20 +49,12 @@ var (
 )
 
 func handler(w http.ResponseWriter, r *http.Request) {
-	path := filepath.Join(config.FsRoot, r.URL.Path)
-	checkPattern := filepath.Join(config.FsRoot, "*")
+	urlPath := r.URL.Path
+	path := filepath.Join(config.FsRoot, urlPath)
 	log.WithFields(log.Fields{
 		"path":     r.URL.Path,
 		"realpath": path,
-		"check":    checkPattern,
 	}).Info("GET")
-
-	if isValid, _ := filepath.Match(checkPattern, path); !isValid {
-		if path != config.FsRoot {
-			w.WriteHeader(500)
-			return
-		}
-	}
 
 	fi, err := os.Stat(path)
 	if err != nil {
@@ -69,9 +63,6 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if fi.IsDir() {
-		log.WithFields(log.Fields{
-			"path": path,
-		}).Info("GET dirlist")
 		dirEntries, err := os.ReadDir(path)
 		if err != nil {
 			log.Warn(err)
@@ -79,20 +70,25 @@ func handler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		filelist := make([]NginxCompatibleFileInfo, 0, len(dirEntries))
+		filelistMutex := sync.Mutex{}
 		dirlist := make([]NginxCompatibleFileInfo, 0, len(dirEntries))
+		dirlistMutex := sync.Mutex{}
 		wg := &sync.WaitGroup{}
 		wg.Add(len(dirEntries))
 		for i, v := range dirEntries {
 			go func(index int, file fs.DirEntry) {
 				fsinfo, _ := file.Info()
 				if fsinfo.IsDir() {
+					dirlistMutex.Lock()
 					dirlist = append(dirlist, NginxCompatibleFileInfo{
 						Name:            file.Name(),
 						Type:            "directory",
 						ModifiedTime:    fsinfo.ModTime().UTC().Format("Mon, 02 Jan 2006 15:04:05 MST"),
 						ModifiedTimeRaw: fsinfo.ModTime().UTC(),
 					})
+					dirlistMutex.Unlock()
 				} else {
+					filelistMutex.Lock()
 					filelist = append(filelist, NginxCompatibleFileInfo{
 						Name:            file.Name(),
 						Type:            "file",
@@ -100,41 +96,58 @@ func handler(w http.ResponseWriter, r *http.Request) {
 						ModifiedTimeRaw: fsinfo.ModTime().UTC(),
 						Size:            fsinfo.Size(),
 					})
+					filelistMutex.Unlock()
 				}
 				wg.Done()
 			}(i, v)
 		}
 		wg.Wait()
-		wg.Add(2)
-		go func() {
-			sort.Slice(dirlist, func(i, j int) bool { return strings.ToLower(dirlist[i].Name) < strings.ToLower(dirlist[j].Name) })
-			wg.Done()
-		}()
-		go func() {
-			switch r.FormValue("order") {
-			case "size":
-				sort.Slice(filelist, func(i, j int) bool { return filelist[i].Size < filelist[j].Size })
-			case "size-reverse":
-				sort.Slice(filelist, func(i, j int) bool { return filelist[i].Size > filelist[j].Size })
-			case "date":
-				sort.Slice(filelist, func(i, j int) bool {
-					return filelist[i].ModifiedTimeRaw.UnixNano() < filelist[j].ModifiedTimeRaw.UnixNano()
-				})
-			case "date-reverse":
-				sort.Slice(filelist, func(i, j int) bool {
-					return filelist[i].ModifiedTimeRaw.UnixNano() > filelist[j].ModifiedTimeRaw.UnixNano()
-				})
-			case "name-reverse":
-				sort.Slice(filelist, func(i, j int) bool { return strings.ToLower(filelist[i].Name) > strings.ToLower(filelist[j].Name) })
-			default:
-				sort.Slice(filelist, func(i, j int) bool { return strings.ToLower(filelist[i].Name) < strings.ToLower(filelist[j].Name) })
-			}
 
-			wg.Done()
-		}()
-		wg.Wait()
+		// sort dirlist
+		sort.Slice(dirlist, func(i, j int) bool { return strings.ToLower(dirlist[i].Name) < strings.ToLower(dirlist[j].Name) })
+
+		// sort filelist
+		switch r.FormValue("order") {
+		case "size":
+			sort.Slice(filelist, func(i, j int) bool { return filelist[i].Size < filelist[j].Size })
+		case "size-reverse":
+			sort.Slice(filelist, func(i, j int) bool { return filelist[i].Size > filelist[j].Size })
+		case "date":
+			sort.Slice(filelist, func(i, j int) bool {
+				return filelist[i].ModifiedTimeRaw.UnixNano() < filelist[j].ModifiedTimeRaw.UnixNano()
+			})
+		case "date-reverse":
+			sort.Slice(filelist, func(i, j int) bool {
+				return filelist[i].ModifiedTimeRaw.UnixNano() > filelist[j].ModifiedTimeRaw.UnixNano()
+			})
+		case "name-reverse":
+			sort.Slice(filelist, func(i, j int) bool { return strings.ToLower(filelist[i].Name) > strings.ToLower(filelist[j].Name) })
+		default:
+			sort.Slice(filelist, func(i, j int) bool { return strings.ToLower(filelist[i].Name) < strings.ToLower(filelist[j].Name) })
+		}
+
 		respList := append(dirlist, filelist...)
-		resp, err := json.Marshal(respList)
+		startAt, err := strconv.Atoi(r.FormValue("start_at"))
+		if err != nil {
+			startAt = 0
+		}
+		size, err := strconv.Atoi(r.FormValue("size"))
+		if err != nil {
+			size = len(filelist)
+		}
+		if startAt >= len(respList) {
+			startAt = 0
+		}
+		if startAt+size >= len(respList) {
+			size = len(respList) - startAt
+		}
+		resp, err := json.Marshal(respList[startAt : startAt+size])
+		log.WithFields(log.Fields{
+			"path":        path,
+			"start_at":    startAt,
+			"size":        size,
+			"dir_entries": len(dirEntries),
+		}).Info("GET dirlist")
 		if err != nil {
 			log.Warn(err)
 			w.WriteHeader(500)
@@ -144,7 +157,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	exists, err := conn.Exists(path).Result()
+	exists, err := conn.Exists(r.Context(), path).Result()
 	if err != nil {
 		log.Warn(err)
 	}
@@ -157,7 +170,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		log.WithFields(log.Fields{
 			"path": r.URL.Path,
 		}).Info("Cache hit")
-		thumb, _ := conn.Get(path).Bytes()
+		thumb, _ := conn.Get(r.Context(), path).Bytes()
 		if string(thumb[:4]) == "JFIF" {
 			w.Header().Set("Content-Type", "image/jpeg")
 		} else {
@@ -211,18 +224,19 @@ func handler(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 
-	tempDir, err := ioutil.TempDir("", "gocacher")
+	tempDir, err := os.MkdirTemp(os.TempDir(), "gocacher")
 	if err != nil {
-		log.Fatal(err)
+		panic("failed to create temp dir: " + err.Error())
 	}
 
 	processors = []processor.Processor{
 		new(imagick.Processor),
 		new(ffmpeg.Processor),
 		new(raw.Processor),
+		new(pdf.Processor),
 	}
 
-	configBin, err := ioutil.ReadFile("/etc/gocacher/config.yml")
+	configBin, err := os.ReadFile("/etc/gocacher/config.yml")
 	if err != nil {
 		panic("config read error: " + err.Error())
 	}
@@ -239,7 +253,7 @@ func main() {
 	})
 	defer conn.Close()
 
-	_, err = conn.Ping().Result()
+	_, err = conn.Ping(context.Background()).Result()
 	if err != nil {
 		log.Fatal("connection fail: redis")
 	}
@@ -271,5 +285,5 @@ func main() {
 		log.Println(http.ListenAndServe("localhost:6060", nil))
 	}()
 
-	http.ListenAndServe(config.ListenAddr, mainServer)
+	log.Errorln(http.ListenAndServe(config.ListenAddr, mainServer))
 }

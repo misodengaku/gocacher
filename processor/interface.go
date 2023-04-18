@@ -3,7 +3,7 @@ package processor
 import (
 	"net/http"
 
-	"github.com/go-redis/redis"
+	"github.com/go-redis/redis/v8"
 )
 
 type Processor interface {

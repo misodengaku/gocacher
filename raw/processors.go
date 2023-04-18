@@ -2,6 +2,7 @@ package raw
 
 import (
 	"bytes"
+	"context"
 	"image/jpeg"
 	"os"
 	"time"
@@ -29,7 +30,9 @@ func (p *Processor) getNEFPreview(path string) ([]byte, error) {
 	}
 
 	go func(_path string, imgBuf *bytes.Buffer, cacheTTL int) {
-		status := p.conn.Set(_path, imgBuf.Bytes(), time.Duration(cacheTTL)*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		status := p.conn.Set(ctx, _path, imgBuf.Bytes(), time.Duration(cacheTTL)*time.Second)
+		cancel()
 		if status.Err() != nil {
 			log.Fatal("set fail", status.Err())
 		}
