@@ -51,5 +51,5 @@ func (p *Processor) GetThumbnail(w http.ResponseWriter, path string) {
 }
 
 func (p *Processor) GetProcessableFileExts() []string {
-	return []string{"JPG", "JPEG", "PNG", "GIF"}
+	return []string{"JPG", "JPEG", "PNG", "GIF", "WEBP"}
 }
